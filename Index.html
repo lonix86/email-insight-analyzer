@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  
+  <style>
+    body { background: #f4f7f6; font-family: 'Segoe UI', system-ui, sans-serif; }
+    .main-card { background: white; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.05); }
+
+    /* Fixed table layout for header parsing */
+    .table-fixed { table-layout: fixed; width: 100%; }
+    .table-fixed th {
+      width: 200px;
+      background: #f8f9fa;
+      color: #495057;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+    }
+    .table-fixed td {
+      word-break: break-all;
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.85rem;
+    }
+
+    /* Status Badges */
+    .status-badge { border-radius: 8px; padding: 12px; font-weight: bold; text-align: center; border: 1px solid #ddd; background: #eee; color: #555;}
+    .pass { background: #e6fffa; color: #234e52; border-color: #b2f5ea; }
+    .fail { background: #fff5f5; color: #822727; border-color: #feb2b2; }
+    .softfail { background: #fffae6; color: #744210; border-color: #ffe066; }
+
+    /* Timeline visualization styles */
+    .timeline { position: relative; padding-left: 30px; border-left: 2px solid #e9ecef; margin-left: 10px; margin-top: 15px; }
+    .timeline-item { position: relative; margin-bottom: 25px; }
+    .timeline-marker {
+      position: absolute; left: -36px; top: 0;
+      width: 14px; height: 14px;
+      border-radius: 50%; border: 2px solid white;
+      box-shadow: 0 0 0 2px #dee2e6; background: white;
+    }
+    .marker-ok { background: #198754; box-shadow: 0 0 0 2px #d1e7dd; }
+    .marker-warn { background: #ffc107; box-shadow: 0 0 0 2px #fff3cd; }
+    .marker-bad { background: #dc3545; box-shadow: 0 0 0 2px #f8d7da; }
+
+    .timeline-content {
+        background: white; border: 1px solid #f0f0f0;
+        border-radius: 6px; padding: 10px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+    }
+
+    .delay-bar-bg {
+        height: 6px; background: #eee; border-radius: 3px;
+        margin-top: 8px; width: 100%; overflow: hidden;
+    }
+    .delay-bar-fill {
+        height: 100%; border-radius: 3px; transition: width 0.5s ease;
+    }
+
+    iframe { width: 100%; height: 600px; border: 1px solid #edf2f7; border-radius: 0 0 8px 8px; }
+    .nav-tabs .nav-link.active { font-weight: bold; border-bottom: 3px solid #0d6efd; }
+
+    /* Clipboard copy button styles */
+    .copy-wrapper {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+    }
+    .copy-btn {
+        opacity: 0.2;
+        transition: all 0.2s ease-in-out;
+        cursor: pointer;
+        padding: 2px 5px;
+        border-radius: 4px;
+        border: none;
+        background: transparent;
+        color: #6c757d;
+    }
+    .copy-wrapper:hover .copy-btn, 
+    tr:hover .copy-btn { 
+        opacity: 1; 
+        background-color: #f8f9fa;
+    }
+    .copy-btn:hover {
+        color: #0d6efd;
+        background-color: #e9ecef;
+    }
+    .copy-success {
+        color: #198754 !important;
+    }
+  </style>
+</head>
+<body class="p-4">
+  <div class="container main-card p-4">
+    <div class="d-flex align-items-center mb-4">
+      <img src="logo.svg" alt="MyLogo" height="50px">
+        <h4 class="m-0 mx-auto">Email Insight Analyzer</h4>
+    </div>
+
+    <textarea id="rawInput" class="form-control mb-3" rows="5" placeholder="Paste RAW email content here (Headers + Body)..."></textarea>
+
+    <button id="analyzeBtn" onclick="run()" class="btn btn-primary w-100 mb-4 fw-bold shadow-sm">
+      ANALYZE MESSAGE
+    </button>
+    
+    <div id="actionBtns" class="row mb-4 d-none">
+        <div class="col-md-6">
+            <button id="resetBtn" onclick="resetAnalysis()" class="btn btn-secondary w-100 fw-bold shadow-sm">
+              NEW ANALYSIS
+            </button>
+        </div>
+        <div class="col-md-6">
+            <button id="pdfBtn" onclick="downloadPdf()" class="btn btn-primary w-100 fw-bold shadow-sm text-white">
+              SAVE PDF REPORT
+            </button>
+        </div>
+    </div>
+
+    <div id="res" class="d-none">
+      
+      <div class="card p-3 mb-4 bg-light border-0 shadow-sm">
+        <h6 class="text-uppercase text-muted fw-bold small mb-2 border-bottom pb-2">Basic Information</h6>
+        <div class="row g-2">
+            <div class="col-12">
+                <strong class="text-secondary small me-1">SUBJECT:</strong> 
+                <span id="sumSubject" class="fw-bold text-dark"></span>
+            </div>
+            <div class="col-md-6">
+                <strong class="text-secondary small me-1">FROM:</strong> 
+                <span id="sumFrom" class="text-dark"></span>
+            </div>
+            <div class="col-md-6">
+                <strong class="text-secondary small me-1">TO:</strong> 
+                <span id="sumTo" class="text-dark"></span>
+            </div>
+            <div class="col-md-6">
+                <strong class="text-secondary small me-1">DATE:</strong> 
+                <span id="sumDate" class="text-dark"></span>
+            </div>
+            <div class="col-md-6">
+                <strong class="text-secondary small me-1">MSG-ID:</strong> 
+                <span id="sumId" class="text-muted small text-break font-monospace"></span>
+            </div>
+            
+            <div class="col-12">
+                <strong class="text-secondary small me-1">X-MAILER:</strong> 
+                <span id="sumXmailer" class="text-dark small"></span>
+            </div>
+            
+            <div class="col-12 mt-2 pt-2 border-top">
+                <strong class="text-secondary small me-1">DMARC POLICY:</strong> 
+                <span id="sumDmarc"></span>
+            </div>
+
+            <div class="col-12 mt-1">
+                <strong class="text-secondary small me-1">BIMI LOGO:</strong> 
+                <span id="sumBimi"></span>
+            </div>
+        </div>
+      </div>
+
+      <div class="row mb-4 g-2">
+        <div class="col-md-6"><div id="spf" class="status-badge">SPF</div></div>
+        <div class="col-md-6"><div id="dkim" class="status-badge">DKIM</div></div>
+      </div>
+
+      <div class="mb-4">
+        <h6 class="text-muted fw-bold small text-uppercase mb-3">Delivery Path & Latency (Timeline)</h6>
+        <div id="timelineContainer" class="timeline"></div>
+        <div id="totalTime" class="status-badge mt-3 fw-bold text-muted small"></div>
+      </div>
+
+      <div id="tabsContainer">
+          <ul class="nav nav-tabs" id="tabs">
+            <li class="nav-item">
+              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#h">
+                ALL HEADERS
+              </button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#v">
+                VISUAL PREVIEW
+              </button>
+            </li>
+          </ul>
+
+          <div class="tab-content border border-top-0 bg-white">
+            <div id="h" class="tab-pane fade show active p-0">
+              <table class="table table-striped table-fixed mb-0">
+                <tbody id="hBody"></tbody>
+              </table>
+            </div>
+            <div id="v" class="tab-pane fade">
+              <iframe id="ifr"></iframe>
+            </div>
+          </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Icon definitions
+const ICON_COPY = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M4 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V2Zm2-1a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1H6ZM2 5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-1h1v1a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1v1H2Z"/></svg>`;
+const ICON_CHECK = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>`;
+
+function run() {
+  const raw = document.getElementById('rawInput').value;
+  if(!raw.trim()) { alert("Please paste the raw email content."); return; }
+  
+  const btn = document.getElementById('analyzeBtn');
+  btn.disabled = true;
+  btn.innerText = "Analyzing...";
+
+  google.script.run
+    .withSuccessHandler(draw)
+    .withFailureHandler(err => { 
+        console.error(err); 
+        alert('Backend Error: ' + err.message); 
+        resetBtnState();
+    })
+    .processRawEmail(raw);
+}
+
+function resetBtnState() {
+    const btn = document.getElementById('analyzeBtn');
+    btn.disabled = false;
+    btn.innerText = "ANALYZE MESSAGE";
+    btn.classList.remove('d-none');
+}
+
+// Clipboard helper function
+function renderCopyable(text, cssClass = "") {
+    if (!text || text === "N/A" || text === "Domain not found" || text === "Sender not found") {
+        return `<span class="text-muted">${text || 'N/A'}</span>`;
+    }
+    const safeText = text.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    return `
+    <div class="copy-wrapper">
+        <span class="${cssClass}">${escapeHtml(text)}</span>
+        <button class="copy-btn" onclick="copyToClipboard(this, '${safeText}')" title="Copy" data-html2canvas-ignore="true">
+            ${ICON_COPY}
+        </button>
+    </div>`;
+}
+
+function copyToClipboard(btnElement, text) {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalHtml = btnElement.innerHTML;
+        btnElement.innerHTML = ICON_CHECK;
+        btnElement.classList.add('copy-success');
+        setTimeout(() => {
+            btnElement.innerHTML = originalHtml;
+            btnElement.classList.remove('copy-success');
+        }, 1500);
+    });
+}
+
+
+function draw(data) {
+  document.getElementById('analyzeBtn').classList.add('d-none');
+  document.getElementById('res').classList.remove('d-none');
+  document.getElementById('actionBtns').classList.remove('d-none');
+
+  // Populate summary section
+  const s = data.summary || {};
+  document.getElementById('sumSubject').innerHTML = renderCopyable(s.subject);
+  document.getElementById('sumFrom').innerHTML = renderCopyable(s.from); 
+  document.getElementById('sumTo').innerHTML = renderCopyable(s.to);
+  document.getElementById('sumDate').innerHTML = renderCopyable(s.date);
+  document.getElementById('sumId').innerHTML = renderCopyable(s.messageId, "text-muted small text-break font-monospace");
+  document.getElementById('sumXmailer').innerHTML = renderCopyable(s.xmailer);
+  
+  // DMARC Check
+  const dmarcVal = s.dmarc || "N/A";
+  let dmarcClass = "small font-monospace text-primary text-break fw-bold";
+  if(dmarcVal.toLowerCase().includes("no policy") || dmarcVal.toLowerCase().includes("error")) {
+      dmarcClass = "small font-monospace text-danger text-break fw-bold";
+  }
+  document.getElementById('sumDmarc').innerHTML = renderCopyable(dmarcVal, dmarcClass);
+
+  // BIMI Check
+  const bimiEl = document.getElementById('sumBimi');
+  const bimiVal = s.bimi || "";
+  if (bimiVal.startsWith('http')) {
+      bimiEl.innerHTML = `
+      <div class="d-flex align-items-center gap-2">
+        <img src="${bimiVal}" alt="BIMI" style="height: 40px; background:#fff; border:1px solid #ddd; padding:2px; border-radius:4px;">
+        <button class="btn btn-sm btn-light border" onclick="copyToClipboard(this, '${bimiVal}')" title="Copy SVG URL">
+            ${ICON_COPY} URL
+        </button>
+      </div>`;
+  } else {
+      bimiEl.innerHTML = renderCopyable(bimiVal, "small text-muted");
+  }
+
+  // SPF Status
+  const spfRes = data.security.spf.result || "NONE";
+  const spfIp = data.security.spf.ip || "";
+  const spfEl = document.getElementById('spf');
+  spfEl.className = "status-badge " + (spfRes === 'PASS' ? 'pass' : (spfRes === 'FAIL' ? 'fail' : 'softfail'));
+  let spfContent = `<div>SPF: ${spfRes}</div>`;
+  if (spfIp) {
+      spfContent += `<div class="mt-1 small fw-normal d-flex justify-content-center">${renderCopyable(spfIp)}</div>`;
+  }
+  spfEl.innerHTML = spfContent;
+
+  // DKIM Status
+  const dkimRes = data.security.dkim.result || "NONE";
+  const dkimDom = data.security.dkim.domain || "";
+  const dkimEl = document.getElementById('dkim');
+  dkimEl.className = "status-badge " + (dkimRes === 'PASS' ? 'pass' : (dkimRes === 'FAIL' ? 'fail' : 'softfail'));
+  let dkimContent = `<div>DKIM: ${dkimRes}</div>`;
+  if (dkimDom) {
+      dkimContent += `<div class="mt-1 small fw-normal d-flex justify-content-center">${renderCopyable(dkimDom)}</div>`;
+  }
+  dkimEl.innerHTML = dkimContent;
+
+  // Hops Timeline
+  let totalSec = 0;
+  const maxDelay = Math.max(...data.hops.map(h => h.delay), 1); 
+
+  const timelineHtml = data.hops.map(h => {
+    totalSec += h.delay;
+    let colorClass = 'marker-ok'; let barColor = '#198754';
+    if (h.delay > 20) { colorClass = 'marker-bad'; barColor = '#dc3545'; } 
+    else if (h.delay > 5) { colorClass = 'marker-warn'; barColor = '#ffc107'; }
+
+    let widthPct = 0;
+    if (h.delay > 0) widthPct = (h.delay / maxDelay) * 100;
+
+    return `
+    <div class="timeline-item">
+      <div class="timeline-marker ${colorClass}"></div>
+      <div class="timeline-content">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+            <span class="fw-bold text-dark small">Hop #${h.id}</span>
+            <span class="badge rounded-pill ${h.delay > 0 ? 'bg-light text-dark border' : 'bg-transparent text-muted'}">${h.delay}s</span>
+        </div>
+        <div class="small text-truncate text-dark fw-bold" title="${escapeHtml(h.from)}">${escapeHtml(h.from)}</div>
+        <div class="small text-muted text-truncate" title="${escapeHtml(h.to)}">↓ to: ${escapeHtml(h.to)}</div>
+        ${h.delay > 0 ? `
+        <div class="d-flex align-items-center mt-2" title="Latency: ${h.delay}s">
+            <div class="delay-bar-bg flex-grow-1"><div class="delay-bar-fill" style="width: ${widthPct}%; background-color: ${barColor};"></div></div>
+        </div>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  
+  document.getElementById('timelineContainer').innerHTML = timelineHtml || '<div class="p-3 text-muted">No hops detected</div>';
+
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  const totalLabel = min > 0 ? `${min}m ${sec}s` : `${sec}s`;
+  const totalEl = document.getElementById('totalTime');
+  totalEl.innerText = `Total Transit Time: ${totalLabel}`;
+  totalEl.className = 'status-badge mt-2 ' + (totalSec >= 60 ? 'fail' : 'pass');
+
+  // Headers Table
+  document.getElementById('hBody').innerHTML = data.headers.map(h => 
+    `<tr><th>${escapeHtml(h.key)}</th><td>${renderCopyable(h.value)}</td></tr>`).join('');
+
+  // Iframe Preview
+  const iframe = document.getElementById('ifr');
+  const blob = new Blob([data.content], { type: "text/html;charset=utf-8" });
+  iframe.src = URL.createObjectURL(blob);
+}
+
+function downloadPdf() {
+  const element = document.getElementById('res');
+  const pdfBtn = document.getElementById('pdfBtn');
+  const originalText = pdfBtn.innerText;
+  pdfBtn.innerText = "Generating PDF...";
+  pdfBtn.disabled = true;
+
+  const clone = element.cloneNode(true);
+  
+  const tabsContainer = clone.querySelector('#tabsContainer');
+  if(tabsContainer) tabsContainer.remove(); 
+  
+  const headerTableOriginal = document.getElementById('h').innerHTML;
+  const pdfHeaderDiv = document.createElement('div');
+  pdfHeaderDiv.innerHTML = `<h6 class="mt-4 mb-2 text-uppercase fw-bold text-muted small">Header Details</h6>` + headerTableOriginal;
+  clone.appendChild(pdfHeaderDiv);
+
+  const opt = {
+    margin: [0.3, 0.3, 0.3, 0.3],
+    filename: 'Email_Analysis_Report.pdf',
+    image: { type: 'jpeg', quality: 0.98 },
+    html2canvas: { scale: 2, useCORS: true }, 
+    jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' }
+  };
+
+  html2pdf().set(opt).from(clone).save().then(() => {
+     pdfBtn.innerText = originalText;
+     pdfBtn.disabled = false;
+  });
+}
+
+function resetAnalysis() {
+  document.getElementById('rawInput').value = '';
+  document.getElementById('res').classList.add('d-none');
+  document.getElementById('actionBtns').classList.add('d-none');
+  
+  document.getElementById('sumSubject').innerHTML = '';
+  document.getElementById('sumFrom').innerHTML = '';
+  document.getElementById('sumTo').innerHTML = '';
+  document.getElementById('sumDate').innerHTML = '';
+  document.getElementById('sumId').innerHTML = '';
+  document.getElementById('sumXmailer').innerHTML = '';
+  document.getElementById('sumDmarc').innerHTML = '';
+  document.getElementById('sumBimi').innerHTML = '';
+
+  document.getElementById('timelineContainer').innerHTML = '';
+  document.getElementById('hBody').innerHTML = '';
+  document.getElementById('ifr').src = 'about:blank';
+  document.getElementById('totalTime').innerText = '';
+  
+  resetBtnState();
+}
+
+function escapeHtml(text) {
+  if (!text) return text;
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
